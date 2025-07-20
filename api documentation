@@ -1,1 +1,379 @@
+# Task Management API Documentation
 
+## Overview
+
+The Task Management API allows developers to integrate task and project management functionality into their applications. This RESTful API provides endpoints for creating, reading, updating, and deleting tasks, managing user assignments, and tracking project progress.
+
+**Base URL:** `https://api.taskmanager.com/v1`
+
+**Authentication:** Bearer Token (OAuth 2.0)
+
+## Table of Contents
+
+1. [Authentication](#authentication)
+2. [Rate Limiting](#rate-limiting)
+3. [Error Handling](#error-handling)
+4. [Endpoints](#endpoints)
+   - [Tasks](#tasks)
+   - [Projects](#projects)
+   - [Users](#users)
+5. [Webhooks](#webhooks)
+6. [SDKs and Libraries](#sdks-and-libraries)
+
+## Authentication
+
+All API requests require authentication using Bearer tokens. Include your token in the Authorization header:
+
+```http
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+### Getting an Access Token
+
+1. Register your application at [Developer Console](https://developer.taskmanager.com)
+2. Obtain your client credentials
+3. Make a token request:
+
+```bash
+curl -X POST https://api.taskmanager.com/oauth/token \
+  -H "Content-Type: application/json" \
+  -d '{
+    "grant_type": "client_credentials",
+    "client_id": "your_client_id",
+    "client_secret": "your_client_secret"
+  }'
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "read write"
+}
+```
+
+## Rate Limiting
+
+API requests are limited to **1000 requests per hour** per access token. Rate limit information is included in response headers:
+
+- `X-RateLimit-Limit`: Maximum requests per hour
+- `X-RateLimit-Remaining`: Requests remaining in current window
+- `X-RateLimit-Reset`: Unix timestamp when rate limit resets
+
+When rate limits are exceeded, the API returns a `429 Too Many Requests` status.
+
+## Error Handling
+
+The API uses conventional HTTP response codes and returns detailed error information in JSON format.
+
+### HTTP Status Codes
+
+| Code | Meaning |
+|------|---------|
+| 200 | OK - Request successful |
+| 201 | Created - Resource created successfully |
+| 400 | Bad Request - Invalid request parameters |
+| 401 | Unauthorized - Invalid or missing authentication |
+| 403 | Forbidden - Insufficient permissions |
+| 404 | Not Found - Resource not found |
+| 429 | Too Many Requests - Rate limit exceeded |
+| 500 | Internal Server Error - Server error |
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "code": "INVALID_PARAMETER",
+    "message": "The 'due_date' parameter must be in ISO 8601 format",
+    "details": {
+      "parameter": "due_date",
+      "provided_value": "2024-13-45",
+      "expected_format": "YYYY-MM-DDTHH:MM:SSZ"
+    }
+  }
+}
+```
+
+## Endpoints
+
+### Tasks
+
+#### Create a Task
+
+Creates a new task in the specified project.
+
+```http
+POST /tasks
+```
+
+**Request Body:**
+```json
+{
+  "title": "Implement user authentication",
+  "description": "Add OAuth 2.0 authentication to the web application",
+  "project_id": 12345,
+  "assignee_id": 67890,
+  "due_date": "2024-08-15T17:00:00Z",
+  "priority": "high",
+  "tags": ["backend", "security"]
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| title | string | Yes | Task title (max 255 characters) |
+| description | string | No | Detailed task description |
+| project_id | integer | Yes | ID of the project this task belongs to |
+| assignee_id | integer | No | ID of the user assigned to this task |
+| due_date | string | No | Due date in ISO 8601 format |
+| priority | string | No | Priority level: `low`, `medium`, `high`, `urgent` |
+| tags | array | No | Array of tag strings |
+
+**Response (201 Created):**
+```json
+{
+  "id": 98765,
+  "title": "Implement user authentication",
+  "description": "Add OAuth 2.0 authentication to the web application",
+  "project_id": 12345,
+  "assignee": {
+    "id": 67890,
+    "name": "Sarah Johnson",
+    "email": "sarah.johnson@example.com"
+  },
+  "status": "todo",
+  "priority": "high",
+  "due_date": "2024-08-15T17:00:00Z",
+  "created_at": "2024-07-20T10:30:00Z",
+  "updated_at": "2024-07-20T10:30:00Z",
+  "tags": ["backend", "security"]
+}
+```
+
+#### Get Task by ID
+
+Retrieves a specific task by its ID.
+
+```http
+GET /tasks/{task_id}
+```
+
+**Example Request:**
+```bash
+curl -X GET https://api.taskmanager.com/v1/tasks/98765 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+#### Update Task Status
+
+Updates the status of a specific task.
+
+```http
+PATCH /tasks/{task_id}/status
+```
+
+**Request Body:**
+```json
+{
+  "status": "in_progress"
+}
+```
+
+**Valid Status Values:**
+- `todo`
+- `in_progress` 
+- `in_review`
+- `completed`
+- `cancelled`
+
+#### List Tasks
+
+Retrieves a paginated list of tasks with optional filtering.
+
+```http
+GET /tasks?project_id=12345&status=todo&page=1&limit=50
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| project_id | integer | Filter by project ID |
+| assignee_id | integer | Filter by assignee ID |
+| status | string | Filter by task status |
+| priority | string | Filter by priority level |
+| page | integer | Page number (default: 1) |
+| limit | integer | Results per page (default: 20, max: 100) |
+
+### Projects
+
+#### Create a Project
+
+```http
+POST /projects
+```
+
+**Request Body:**
+```json
+{
+  "name": "Web Application Redesign",
+  "description": "Complete redesign of the company website",
+  "owner_id": 12345,
+  "team_members": [67890, 54321],
+  "deadline": "2024-12-01T23:59:59Z"
+}
+```
+
+## Webhooks
+
+Configure webhooks to receive real-time notifications when tasks or projects are updated.
+
+### Supported Events
+
+- `task.created`
+- `task.updated` 
+- `task.completed`
+- `project.created`
+- `project.completed`
+
+### Webhook Payload Example
+
+```json
+{
+  "event": "task.completed",
+  "timestamp": "2024-07-20T14:30:00Z",
+  "data": {
+    "task": {
+      "id": 98765,
+      "title": "Implement user authentication",
+      "status": "completed",
+      "completed_by": {
+        "id": 67890,
+        "name": "Sarah Johnson"
+      }
+    }
+  }
+}
+```
+
+## Code Examples
+
+### JavaScript (Node.js)
+
+```javascript
+const axios = require('axios');
+
+const taskManager = axios.create({
+  baseURL: 'https://api.taskmanager.com/v1',
+  headers: {
+    'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
+    'Content-Type': 'application/json'
+  }
+});
+
+// Create a new task
+async function createTask(taskData) {
+  try {
+    const response = await taskManager.post('/tasks', taskData);
+    console.log('Task created:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Error creating task:', error.response.data);
+  }
+}
+
+// Usage
+createTask({
+  title: 'Write API documentation',
+  project_id: 12345,
+  priority: 'high'
+});
+```
+
+### Python
+
+```python
+import requests
+import json
+
+class TaskManagerAPI:
+    def __init__(self, access_token):
+        self.base_url = 'https://api.taskmanager.com/v1'
+        self.headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
+    
+    def create_task(self, task_data):
+        response = requests.post(
+            f'{self.base_url}/tasks',
+            headers=self.headers,
+            json=task_data
+        )
+        response.raise_for_status()
+        return response.json()
+
+# Usage
+api = TaskManagerAPI('YOUR_ACCESS_TOKEN')
+task = api.create_task({
+    'title': 'Write API documentation',
+    'project_id': 12345,
+    'priority': 'high'
+})
+```
+
+### cURL
+
+```bash
+# Create a task
+curl -X POST https://api.taskmanager.com/v1/tasks \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Write API documentation",
+    "project_id": 12345,
+    "priority": "high"
+  }'
+
+# Get task details
+curl -X GET https://api.taskmanager.com/v1/tasks/98765 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+## SDKs and Libraries
+
+Official SDKs are available for popular programming languages:
+
+- **JavaScript/Node.js:** `npm install taskmanager-api`
+- **Python:** `pip install taskmanager-api`
+- **PHP:** `composer require taskmanager/api-client`
+- **Ruby:** `gem install taskmanager-api`
+
+## Support and Resources
+
+- **Developer Portal:** [https://developer.taskmanager.com](https://developer.taskmanager.com)
+- **API Status:** [https://status.taskmanager.com](https://status.taskmanager.com)
+- **Support Email:** api-support@taskmanager.com
+- **Community Forum:** [https://community.taskmanager.com](https://community.taskmanager.com)
+
+## Changelog
+
+### Version 1.2.0 (July 15, 2024)
+- Added webhook support for real-time notifications
+- Introduced task priority filtering
+- Improved error response format
+
+### Version 1.1.0 (June 1, 2024)
+- Added project management endpoints
+- Increased rate limit to 1000 requests per hour
+- Added support for task tags
+
+### Version 1.0.0 (May 1, 2024)
+- Initial API release
+- Basic CRUD operations for tasks
+- OAuth 2.0 authentication
